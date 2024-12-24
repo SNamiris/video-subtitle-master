@@ -68,10 +68,13 @@ export default async function translate(
       for (var i = 0; i < data.length; i += 4) {
         const sourceContent = data[i + 2];
         if (!sourceContent) continue;
+        console.log(`开始处理第 ${i/4 + 1} 条数据，时间: ${new Date().toISOString()}`);
         let targetContent;
         try {
           targetContent = await translator(sourceContent, proof);
+          console.log(`完成第 ${i/4 + 1} 条数据翻译，时间: ${new Date().toISOString()}`);
         } catch (translationError) {
+          console.error(`第 ${i/4 + 1} 条数据翻译失败:`, translationError);
           throw new Error(`${translationError.message}`);
         }
         items.push({

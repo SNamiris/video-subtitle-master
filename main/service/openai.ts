@@ -38,36 +38,58 @@ export async function translateWithOpenAI(
     });
   }
 
-  try {
-    const systemPrompt = provider.prompt
-      ? renderTemplate(provider.prompt, { sourceLanguage, targetLanguage, content: text })
-      : `You are a helpful assistant.`;
+  // 添加每分钟请求次数
+  const REQUEST_PER_MINUTE = 15; // RPM
+  const REQUEST_RETURN_INTERVAL = 1500; // LLM返回时间
+  let min_request_interval = 60000 / REQUEST_PER_MINUTE;
 
-    const userPrompt = `Translate the following text from ${sourceLanguage} to ${targetLanguage}: "${text}"`;
+  let retryCount = 0;
+  const MAX_RETRIES = 2; // 最多重试2次，即总共尝试3次
 
-    const completion = await openai.chat.completions.create({
-      model: provider.id === 'azure' ? undefined : (provider.modelName || "gpt-3.5-turbo"),
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      temperature: 0.3,
-    });
+  while (retryCount <= MAX_RETRIES) {
+    try {
+      const delayTime = Math.max(0, min_request_interval - REQUEST_RETURN_INTERVAL);
+      await new Promise(resolve => setTimeout(resolve, delayTime));  
 
-    const result = completion?.choices?.[0]?.message?.content?.trim();
+      const systemPrompt = provider.prompt
+        ? renderTemplate(provider.prompt, { sourceLanguage, targetLanguage, content: text })
+        : `You are a professional, authentic machine translation engine.`;
 
-    console.log('OpenAI Prompt & Result:', {
-      prompt: {
-        systemPrompt: systemPrompt,
-        userPrompt: userPrompt
-      },
-      result
-    });
+      const userPrompt = `Translate the following text from ${sourceLanguage} to ${targetLanguage}: "${text}". Don't say anything else.`;
 
-    return result;
-  } catch (error) {
-    console.error('OpenAI translation error:', error);
-    throw new Error(`OpenAI translation failed: ${error.message}`);
+      const completion = await openai.chat.completions.create({
+        model: provider.id === 'azure' ? undefined : (provider.modelName || "gpt-3.5-turbo"),
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.3,
+      });
+
+      const result = completion?.choices?.[0]?.message?.content?.trim();
+
+      console.log('OpenAI Prompt & Result:', {
+        prompt: {
+          systemPrompt: systemPrompt,
+          userPrompt: userPrompt
+        },
+        result
+      });
+
+      retryCount = 0;
+
+      return result;
+    } catch (error) {
+      console.error(`OpenAI translation error (attempt ${retryCount + 1}):`, error);
+      
+      if (retryCount < MAX_RETRIES) {
+        console.log('等待60秒后重试...');
+        await new Promise(resolve => setTimeout(resolve, 60000));
+        retryCount++;
+      } else {
+        throw new Error(`OpenAI translation failed after ${MAX_RETRIES + 1} attempts: ${error.message}`);
+      }
+    }
   }
 }
 
